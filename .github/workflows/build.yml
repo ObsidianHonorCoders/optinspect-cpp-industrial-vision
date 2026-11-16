@@ -30,7 +30,7 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     env:
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
@@ -64,12 +64,7 @@ jobs:
           ${{ env.VCPKG_ROOT }}\vcpkg.exe install "sqlite3:x64-windows"
 
       - name: Configure (CMake)
-        # Uses the VS2022 generator since that's what windows-latest
-        # GitHub-hosted runners provide. Local development/validation for
-        # this project was done against VS2017 (see README.md); this
-        # workflow has not actually been run/verified on GitHub Actions
-        # infrastructure from this environment, so treat it as best-effort
-        # until its first real run confirms it.
+        # Pin the runner image to one that provides the VS2022 generator.
         run: >
           cmake -S . -B build
           -G "Visual Studio 17 2022" -A x64
