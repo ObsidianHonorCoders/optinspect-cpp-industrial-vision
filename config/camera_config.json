@@ -1,0 +1,18 @@
+{
+  "_comment": "Reserved for future phases (physical camera acquisition). Not used by Phase 1. Documented here as an example schema only.",
+  "camera": {
+    "device_id": 0,
+    "resolution": {
+      "width": 4096,
+      "height": 3072
+    },
+    "exposure_us": 10000,
+    "gain_db": 0.0,
+    "trigger_mode": "software",
+    "pixel_format": "BGR8"
+  },
+  "lighting": {
+    "type": "coaxial_led",
+    "intensity_percent": 80
+  }
+}

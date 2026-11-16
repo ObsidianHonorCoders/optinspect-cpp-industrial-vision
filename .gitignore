@@ -1,0 +1,57 @@
+## Build artifacts
+build/
+out/
+bin/
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+
+## CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+*.cmake
+!cmake/*.cmake
+!CMakeLists.txt
+
+## vcpkg (local dependency manager, not committed)
+vcpkg/
+
+## Visual Studio / VS Code
+.vs/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/c_cpp_properties.json
+*.user
+*.suo
+
+## Results / generated inspection outputs
+results/
+*.log
+
+## Dataset (do not commit the full 1,500-pair DeepPCB dataset; only the
+## small curated sample under data/samples/deeppcb/ is version-controlled
+## for CI/demo purposes, see docs/dataset.md)
+data/samples/*
+data/references/*
+!data/samples/.gitkeep
+!data/samples/deeppcb/
+!data/references/.gitkeep
+data/DeepPCB/
+
+## OS
+Thumbs.db
+.DS_Store
+
+## Python
+__pycache__/
+*.pyc
+.venv/

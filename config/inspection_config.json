@@ -1,0 +1,37 @@
+{
+  "default_output_dir": "results",
+  "preprocessing": {
+    "gaussian_kernel_size": 5,
+    "gaussian_sigma": 0.0
+  },
+  "alignment": {
+    "method": "ECC",
+    "ecc_max_iterations": 100,
+    "ecc_epsilon": 1e-6,
+    "orb_max_features": 1000,
+    "orb_good_match_ratio": 0.75,
+    "orb_min_good_matches": 10,
+    "max_translation_px": 200.0
+  },
+  "threshold": {
+    "method": "OTSU",
+    "fixed_threshold": 30.0,
+    "adaptive_block_size": 25,
+    "adaptive_c": 5.0
+  },
+  "morphology": {
+    "kernel_size": 3,
+    "close_iterations": 2,
+    "open_iterations": 1
+  },
+  "detection": {
+    "min_defect_area_px": 20.0,
+    "max_defect_area_px": 50000.0,
+    "min_confidence": 0.0
+  },
+  "decision": {
+    "fail_defect_count_threshold": 1,
+    "fail_area_px": 400.0,
+    "min_alignment_confidence": 0.5
+  }
+}

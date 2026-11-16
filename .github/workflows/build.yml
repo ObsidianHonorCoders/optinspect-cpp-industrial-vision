@@ -1,0 +1,88 @@
+name: Build and Test
+
+# Builds OptiInspect on a Windows runner using vcpkg to obtain OpenCV and
+# GoogleTest, then runs the full CTest suite.
+#
+# Note on build time: installing OpenCV from source via vcpkg with the
+# feature set used here (core,highgui,calib3d,png,jpeg) takes roughly
+# 10-15 minutes on a cold cache, based on local development measurements.
+# vcpkg's binary caching (enabled below) should make this much faster on
+# subsequent runs once a cache entry exists.
+#
+# Note on network reliability: during local development on a corporate
+# network, vcpkg's dependency downloads (e.g. nasm, used by libjpeg-turbo)
+# occasionally failed TLS handshakes behind a corporate proxy and required
+# manual workarounds. That issue was specific to the local corporate
+# network/proxy configuration, not to the build itself; GitHub-hosted
+# runners have direct internet access and should not hit the same problem,
+# but this is not something that was possible to verify from this
+# environment, so if this workflow fails on a GitHub runner for network
+# reasons, that would be a new finding, not a known/expected issue.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Export GitHub Actions cache variables for vcpkg
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Clone vcpkg
+        run: git clone https://github.com/microsoft/vcpkg ${{ env.VCPKG_ROOT }}
+
+      - name: Bootstrap vcpkg
+        run: ${{ env.VCPKG_ROOT }}\bootstrap-vcpkg.bat
+
+      - name: Install OpenCV and GoogleTest via vcpkg
+        # Deliberately a reduced OpenCV feature set: the default vcpkg
+        # features pull in dnn/gapi -> abseil, which needs a newer compiler
+        # toolset than this project targets and is unnecessary since this
+        # is a traditional-CV-only (non-ML) project.
+        run: |
+          ${{ env.VCPKG_ROOT }}\vcpkg.exe install "opencv4[core,highgui,calib3d,png,jpeg]:x64-windows"
+          ${{ env.VCPKG_ROOT }}\vcpkg.exe install "gtest:x64-windows"
+
+      - name: Configure (CMake)
+        # Uses the VS2022 generator since that's what windows-latest
+        # GitHub-hosted runners provide. Local development/validation for
+        # this project was done against VS2017 (see README.md); this
+        # workflow has not actually been run/verified on GitHub Actions
+        # infrastructure from this environment, so treat it as best-effort
+        # until its first real run confirms it.
+        run: >
+          cmake -S . -B build
+          -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      - name: Build (Release)
+        run: cmake --build build --config Release -- /m
+
+      - name: Run tests
+        working-directory: build
+        run: ctest -C Release --output-on-failure
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-logs
+          path: build/Testing/Temporary/
