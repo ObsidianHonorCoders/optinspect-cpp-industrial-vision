@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 
 project(OptiInspect
     VERSION 1.0.0
-    DESCRIPTION "OptiInspect - Industrial Optical Inspection Engine (Phase 1)"
+    DESCRIPTION "OptiInspect - Industrial Optical Inspection Engine with SQLite persistence and quality analytics"
     LANGUAGES CXX
 )
 
@@ -73,6 +73,39 @@ target_link_libraries(optinspect_engine PUBLIC
 )
 
 # ---------------------------------------------------------------------------
+# Database layer (Phase 2): SQLite connection management, schema/migrations,
+# repositories, persistence service and quality analytics. Deliberately has
+# no dependency on OpenCV or the inspection engine; it exchanges plain data
+# records (include/database/Models.hpp) with the application layer.
+#
+# SQLite comes from vcpkg:  vcpkg/vcpkg.exe install sqlite3:x64-windows
+# ---------------------------------------------------------------------------
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+
+add_library(optinspect_database STATIC
+    src/database/DatabaseConnection.cpp
+    src/database/Statement.cpp
+    src/database/DatabaseTransaction.cpp
+    src/database/DatabaseInitializer.cpp
+    src/database/Schema.cpp
+    src/database/Models.cpp
+    src/database/TimeUtil.cpp
+    src/database/InspectionQuery.cpp
+    src/database/ProductRepository.cpp
+    src/database/InspectionRepository.cpp
+    src/database/DefectRepository.cpp
+    src/database/InspectionImageRepository.cpp
+    src/database/InspectionPersistenceService.cpp
+    src/database/QualityAnalyticsService.cpp
+)
+
+target_include_directories(optinspect_database PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(optinspect_database PUBLIC unofficial::sqlite3::sqlite3)
+
+# ---------------------------------------------------------------------------
 # Application-layer library (pipeline orchestration, CLI, reporting,
 # annotation). Kept separate from optinspect_engine so its headers remain
 # private to the application and are not exposed as part of the public
@@ -80,6 +113,8 @@ target_link_libraries(optinspect_engine PUBLIC
 # ---------------------------------------------------------------------------
 add_library(optinspect_application STATIC
     src/application/BatchDiscovery.cpp
+    src/application/DatabaseCommands.cpp
+    src/application/InspectionRecorder.cpp
     src/application/PerformanceReport.cpp
     src/application/CliArguments.cpp
     src/application/InspectionPipeline.cpp
@@ -91,7 +126,7 @@ target_include_directories(optinspect_application PUBLIC
     ${CMAKE_SOURCE_DIR}/src/application
 )
 
-target_link_libraries(optinspect_application PUBLIC optinspect_engine)
+target_link_libraries(optinspect_application PUBLIC optinspect_engine optinspect_database)
 
 # ---------------------------------------------------------------------------
 # CLI executable

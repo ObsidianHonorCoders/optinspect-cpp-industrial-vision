@@ -104,6 +104,13 @@ InspectionConfig InspectionConfig::loadFromFile(const std::string& path) {
             config.decision.min_alignment_confidence = getOr(dec, "min_alignment_confidence", config.decision.min_alignment_confidence);
         }
 
+        if (root.contains("database")) {
+            const auto& db = root.at("database");
+            config.database.enabled = getOr(db, "enabled", config.database.enabled);
+            config.database.path = getOr(db, "path", config.database.path);
+            config.database.auto_initialize = getOr(db, "auto_initialize", config.database.auto_initialize);
+        }
+
         config.default_output_dir = getOr(root, "default_output_dir", config.default_output_dir);
     } catch (const json::exception& e) {
         throw ConfigurationError("Error reading configuration file '" + path + "': " + e.what());
@@ -175,6 +182,10 @@ void InspectionConfig::validate() const {
     }
     if (decision.min_alignment_confidence < 0.0 || decision.min_alignment_confidence > 1.0) {
         throw ConfigurationError("decision.min_alignment_confidence must be in [0, 1].");
+    }
+
+    if (database.enabled && database.path.empty()) {
+        throw ConfigurationError("database.path must not be empty when database.enabled is true.");
     }
 }
 

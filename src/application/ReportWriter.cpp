@@ -29,7 +29,34 @@ json alignmentMethodToJson(AlignmentMethod method) {
     return "UNKNOWN";
 }
 
+json configurationToJson(const InspectionConfig& config) {
+    return {
+        {"preprocessing",
+         {{"gaussian_kernel_size", config.preprocessing.gaussian_kernel_size},
+          {"gaussian_sigma", config.preprocessing.gaussian_sigma}}},
+        {"alignment",
+         {{"method", alignmentMethodToJson(config.alignment.method)},
+          {"max_translation_px", config.alignment.max_translation_px}}},
+        {"threshold",
+         {{"method", thresholdMethodToJson(config.threshold.method)},
+          {"fixed_threshold", config.threshold.fixed_threshold}}},
+        {"morphology",
+         {{"kernel_size", config.morphology.kernel_size},
+          {"close_iterations", config.morphology.close_iterations},
+          {"open_iterations", config.morphology.open_iterations}}},
+        {"detection",
+         {{"min_defect_area_px", config.detection.min_defect_area_px},
+          {"max_defect_area_px", config.detection.max_defect_area_px}}},
+        {"decision",
+         {{"fail_defect_count_threshold", config.decision.fail_defect_count_threshold},
+          {"fail_area_px", config.decision.fail_area_px},
+          {"min_alignment_confidence", config.decision.min_alignment_confidence}}}};
+}
 }  // namespace
+
+std::string ReportWriter::configurationJson(const InspectionConfig& config) {
+    return configurationToJson(config).dump();
+}
 
 void ReportWriter::writeJson(const std::string& output_path, const InspectionMetadata& metadata,
                               const InspectionResult& result, const PipelineTimer& timer,
@@ -78,27 +105,7 @@ void ReportWriter::writeJson(const std::string& output_path, const InspectionMet
     report["stage_timings_ms"] = timings_json;
     report["total_processing_time_ms"] = timer.totalMilliseconds();
 
-    report["configuration"] = {
-        {"preprocessing",
-         {{"gaussian_kernel_size", config.preprocessing.gaussian_kernel_size},
-          {"gaussian_sigma", config.preprocessing.gaussian_sigma}}},
-        {"alignment",
-         {{"method", alignmentMethodToJson(config.alignment.method)},
-          {"max_translation_px", config.alignment.max_translation_px}}},
-        {"threshold",
-         {{"method", thresholdMethodToJson(config.threshold.method)},
-          {"fixed_threshold", config.threshold.fixed_threshold}}},
-        {"morphology",
-         {{"kernel_size", config.morphology.kernel_size},
-          {"close_iterations", config.morphology.close_iterations},
-          {"open_iterations", config.morphology.open_iterations}}},
-        {"detection",
-         {{"min_defect_area_px", config.detection.min_defect_area_px},
-          {"max_defect_area_px", config.detection.max_defect_area_px}}},
-        {"decision",
-         {{"fail_defect_count_threshold", config.decision.fail_defect_count_threshold},
-          {"fail_area_px", config.decision.fail_area_px},
-          {"min_alignment_confidence", config.decision.min_alignment_confidence}}}};
+    report["configuration"] = configurationToJson(config);
 
     std::ofstream out(output_path);
     out << report.dump(2);

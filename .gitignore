@@ -33,6 +33,20 @@ vcpkg/
 *.user
 *.suo
 
+## Databases (Phase 2): runtime/test databases and SQLite side files are never
+## committed. Only a deliberately small, named test fixture could be added with
+## an explicit "!" exception.
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+data/*.db*
+data/db/
 ## Results / generated inspection outputs
 results/
 *.log
