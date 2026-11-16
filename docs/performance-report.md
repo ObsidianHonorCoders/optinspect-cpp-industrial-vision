@@ -123,3 +123,83 @@ single-pair inspection ID (`%Y%m%d-%H%M%S`) is identical and files overwrite
 each other. The built-in batch mode (`--reference <dir> --input <dir>`)
 avoids this by appending the pair id to the ID, so it is the recommended way
 to inspect many pairs.
+
+---
+
+# Database benchmarks (Phase 2)
+
+These measurements cover the SQLite persistence and analytics layer only. They
+are **separate from, and not comparable with,** the Phase 1 image-processing
+timings above: the Phase 1 section was measured on real DeepPCB images, whereas
+the database benchmark uses synthetic records, and the two were not necessarily
+measured on the same machine (the Phase 1 machine's hardware was not recorded).
+
+## Test environment
+
+- Machine: AMD EPYC 9R14 (4 cores), 31 GB RAM, Windows Server 2022 Datacenter
+- Compiler: MSVC 19.16 (Visual Studio 2017 toolset), Release configuration
+- SQLite: 3.54.1 (vcpkg `sqlite3`, default features), linked as a DLL
+- Database: file in the system temp folder on the machine's local disk,
+  `journal_mode=WAL`, `synchronous=FULL` (SQLite's default, i.e. every commit is
+  flushed to disk), foreign keys on
+- Program: `build\bin\Release\optinspect_database_benchmark.exe`
+  (`tests/database/benchmark_database.cpp`), run twice in a row
+
+## Dataset and methodology
+
+- **Synthetic, deterministic data:** records come from a fixed-seed linear
+  congruential generator, so row counts and values are identical on every
+  run. They are invented test data and say nothing about real inspection
+  results or real defect statistics.
+- **Individual inserts:** 500 inspections with 0 defects and 500 with 20
+  defects (each with 4 image references), every one persisted through
+  `InspectionPersistenceService::persist` in its own transaction, in a fresh
+  database with 5 products. Reported value = total elapsed time / 500.
+- **Batch insert:** 10,000 inspections with 5 defects and 4 images each
+  (10,000 inspections, 50,000 defects, 40,000 image references, 20 products,
+  timestamps spread over 90 days) written through the same service inside one
+  outer transaction. Request construction is excluded from the timing.
+- **Queries:** run against the 10,000-inspection database after the batch
+  insert, each repeated 100 (history) or 20 (analytics) times; the mean is
+  reported. All timings are wall-clock (`std::chrono::steady_clock`) and
+  include building the C++ result objects, not just SQLite's execution.
+- **File size:** size of the database plus WAL after a `wal_checkpoint(TRUNCATE)`.
+
+## Results
+
+| Operation | Dataset / method | Run 1 | Run 2 | Unit |
+|---|---|---:|---:|---|
+| Insert inspection (0 defects, 4 images) | 500 inserts, one transaction each | 2.653 | 2.629 | ms / inspection |
+| Insert inspection (20 defects, 4 images) | 500 inserts, one transaction each | 8.080 | 7.957 | ms / inspection |
+| Batch insert (5 defects, 4 images each) | 10,000 in one transaction | 6665.753 | 6575.643 | ms total |
+| Batch insert, per inspection | 10,000 in one transaction | 0.667 | 0.658 | ms / inspection |
+| History query | product + date range, `LIMIT 50` | 0.111 | 0.119 | ms |
+| History query | status = REVIEW, `LIMIT 50` | 0.095 | 0.103 | ms |
+| History query | single serial number | 0.043 | 0.042 | ms |
+| Analytics: inspection summary | 10,000 inspections | 1.084 | 1.088 | ms |
+| Analytics: product quality | 10,000 inspections, 20 products | 3.009 | 2.963 | ms |
+| Analytics: defect statistics | 50,000 defects | 29.972 | 29.895 | ms |
+| Analytics: daily time series (CTE + window functions) | 10,000 inspections | 4.262 | 4.265 | ms |
+| Analytics: processing time by product | 10,000 inspections | 2.836 | 2.755 | ms |
+| Database file size | 10,000 inspections / 50,000 defects | 12.691 | 12.691 | MiB |
+| Database file size per inspection | same | 1.300 | 1.300 | KiB |
+
+## Interpretation and limits
+
+- Persisting one inspection costs roughly 3-8 ms with a commit (and flush) per
+  inspection, versus about 0.67 ms per inspection when 10,000 are committed
+  together. The gap suggests the per-commit flush dominates single inserts, but that was not measured separately. Compared with
+  the 80-200 ms typical Phase 1 inspection time (see above) this is small, but
+  the two figures come from different datasets and machines and were not
+  measured together as an end-to-end overhead.
+- History lookups and the analytics queries finished in about 0.04-30 ms on
+  10,000 inspections. The defect statistics are the slowest because they scan
+  all 50,000 defect rows.
+- These numbers come from a single machine, two runs, one synthetic data
+  distribution (file cache state was not controlled). No concurrency, multi-process contention,
+  much larger datasets or slower storage were tested, so nothing here supports
+  claims beyond this setup.
+- No index was added or removed on the basis of these measurements; the indexes
+  documented in [database-design.md](database-design.md) were chosen for the
+  query patterns and confirmed with `EXPLAIN QUERY PLAN`. No before/after
+  comparison without indexes was measured.

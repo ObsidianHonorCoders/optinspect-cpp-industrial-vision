@@ -33,5 +33,10 @@
     "fail_defect_count_threshold": 1,
     "fail_area_px": 400.0,
     "min_alignment_confidence": 0.5
+  },
+  "database": {
+    "enabled": false,
+    "path": "data/optinspect.db",
+    "auto_initialize": true
   }
 }

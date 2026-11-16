@@ -62,6 +62,15 @@ struct DecisionConfig {
     double min_alignment_confidence = 0.5;
 };
 
+/// Optional persistence of inspection results (Phase 2). Image processing
+/// never reads these values; they only control what the application layer
+/// does with an InspectionResult after the pipeline has finished.
+struct DatabaseConfig {
+    bool enabled = false;               ///< Persist every inspection when true.
+    std::string path = "data/optinspect.db";
+    bool auto_initialize = true;        ///< Create/upgrade the schema on first use.
+};
+
 /// All inspection parameters loaded from config/inspection_config.json.
 /// Grouped by pipeline stage so each module only depends on the sub-struct
 /// it actually needs, rather than the entire configuration object.
@@ -72,6 +81,7 @@ struct InspectionConfig {
     MorphologyConfig morphology;
     DetectionConfig detection;
     DecisionConfig decision;
+    DatabaseConfig database;
 
     std::string default_output_dir = "results";
 

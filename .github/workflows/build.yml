@@ -1,7 +1,9 @@
 name: Build and Test
 
-# Builds OptiInspect on a Windows runner using vcpkg to obtain OpenCV and
-# GoogleTest, then runs the full CTest suite.
+# Builds OptiInspect on a Windows runner using vcpkg to obtain OpenCV,
+# GoogleTest and SQLite, then runs the full CTest suite (Phase 1 unit and
+# integration tests plus the Phase 2 database tests, which use temporary
+# databases only) and a short database CLI smoke test.
 #
 # Note on build time: installing OpenCV from source via vcpkg with the
 # feature set used here (core,highgui,calib3d,png,jpeg) takes roughly
@@ -51,7 +53,7 @@ jobs:
       - name: Bootstrap vcpkg
         run: ${{ env.VCPKG_ROOT }}\bootstrap-vcpkg.bat
 
-      - name: Install OpenCV and GoogleTest via vcpkg
+      - name: Install OpenCV, GoogleTest and SQLite via vcpkg
         # Deliberately a reduced OpenCV feature set: the default vcpkg
         # features pull in dnn/gapi -> abseil, which needs a newer compiler
         # toolset than this project targets and is unnecessary since this
@@ -59,6 +61,7 @@ jobs:
         run: |
           ${{ env.VCPKG_ROOT }}\vcpkg.exe install "opencv4[core,highgui,calib3d,png,jpeg]:x64-windows"
           ${{ env.VCPKG_ROOT }}\vcpkg.exe install "gtest:x64-windows"
+          ${{ env.VCPKG_ROOT }}\vcpkg.exe install "sqlite3:x64-windows"
 
       - name: Configure (CMake)
         # Uses the VS2022 generator since that's what windows-latest
@@ -79,6 +82,23 @@ jobs:
       - name: Run tests
         working-directory: build
         run: ctest -C Release --output-on-failure
+
+      - name: Smoke-test the database CLI
+        # Uses a throwaway database under RUNNER_TEMP, never a pre-existing one.
+        # The inspection exit code is 0/1/2 (PASS/FAIL/REVIEW); anything else is an error.
+        shell: pwsh
+        run: |
+          $exe = "build\bin\Release\optinspect.exe"
+          $db = Join-Path $env:RUNNER_TEMP "ci_smoke.db"
+          & $exe db init --database $db
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $exe product create --database $db --code CI-001 --name "CI board"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $exe inspect --reference data\samples\deeppcb\images\00041000_temp.jpg --input data\samples\deeppcb\images\00041000_test.jpg --output (Join-Path $env:RUNNER_TEMP "ci_out") --database $db --product-id 1
+          if ($LASTEXITCODE -notin 0, 1, 2) { exit 1 }
+          & $exe analytics summary --database $db
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          exit 0
 
       - name: Upload test logs on failure
         if: failure()

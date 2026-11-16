@@ -54,6 +54,33 @@ TEST(ConfigTest, ThrowsOnInvalidDetectionAreaRange) {
     fs::remove(path);
 }
 
+TEST(ConfigTest, DatabaseSectionDefaultsToDisabled) {
+    const auto path = writeTempConfig(R"({})", "optinspect_db_default_config.json");
+    InspectionConfig config = InspectionConfig::loadFromFile(path.string());
+    EXPECT_FALSE(config.database.enabled);
+    EXPECT_EQ(config.database.path, "data/optinspect.db");
+    EXPECT_TRUE(config.database.auto_initialize);
+    fs::remove(path);
+}
+
+TEST(ConfigTest, LoadsDatabaseSection) {
+    const auto path = writeTempConfig(
+        R"({"database": {"enabled": true, "path": "x/y.db", "auto_initialize": false}})",
+        "optinspect_db_config.json");
+    InspectionConfig config = InspectionConfig::loadFromFile(path.string());
+    EXPECT_TRUE(config.database.enabled);
+    EXPECT_EQ(config.database.path, "x/y.db");
+    EXPECT_FALSE(config.database.auto_initialize);
+    fs::remove(path);
+}
+
+TEST(ConfigTest, ThrowsWhenDatabaseEnabledWithEmptyPath) {
+    const auto path = writeTempConfig(R"({"database": {"enabled": true, "path": ""}})",
+                                       "optinspect_db_empty_path_config.json");
+    EXPECT_THROW(InspectionConfig::loadFromFile(path.string()), ConfigurationError);
+    fs::remove(path);
+}
+
 TEST(ConfigTest, ThrowsOnInvalidAlignmentMethod) {
     const auto path = writeTempConfig(R"({"alignment": {"method": "NOT_A_METHOD"}})",
                                        "optinspect_invalid_alignment_config.json");
