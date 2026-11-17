@@ -6,6 +6,9 @@
 
 #include <opencv2/core.hpp>
 
+#include <functional>
+#include <string>
+
 namespace optinspect {
 
 /// Output of a full pipeline run: the inspection result plus the
@@ -18,6 +21,12 @@ struct PipelineOutput {
     PipelineTimer timer;
 };
 
+/// Optional notification invoked on the calling thread right before each
+/// pipeline stage starts ("alignment", "detection", "decision"). It lets a
+/// caller (e.g. the GUI worker) report real progress; the pipeline behaves
+/// identically with or without it.
+using StageObserver = std::function<void(const std::string& stage_name)>;
+
 /// Orchestrates the full inspection pipeline: alignment, comparison,
 /// detection, and decision. This class contains no CLI or file I/O
 /// concerns (those belong to the application's main()); it operates purely
@@ -27,7 +36,8 @@ class InspectionPipeline {
 public:
     explicit InspectionPipeline(InspectionConfig config);
 
-    PipelineOutput run(const cv::Mat& reference, const cv::Mat& inspected) const;
+    PipelineOutput run(const cv::Mat& reference, const cv::Mat& inspected,
+                       const StageObserver& observer = {}) const;
 
 private:
     InspectionConfig config_;
