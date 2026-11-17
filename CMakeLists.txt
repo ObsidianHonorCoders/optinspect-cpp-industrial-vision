@@ -118,6 +118,7 @@ add_library(optinspect_application STATIC
     src/application/PerformanceReport.cpp
     src/application/CliArguments.cpp
     src/application/InspectionPipeline.cpp
+    src/application/InspectionService.cpp
     src/application/ReportWriter.cpp
     src/application/ResultAnnotator.cpp
 )
@@ -133,6 +134,78 @@ target_link_libraries(optinspect_application PUBLIC optinspect_engine optinspect
 # ---------------------------------------------------------------------------
 add_executable(optinspect src/application/main.cpp)
 target_link_libraries(optinspect PRIVATE optinspect_application)
+
+# ---------------------------------------------------------------------------
+# Phase 3: OpenGL desktop GUI (optional). The engine, database, application
+# library and CLI above never depend on any of this; configure with
+# -DOPTINSPECT_BUILD_GUI=OFF to build the CLI and tests without the GUI
+# dependencies (GLFW, GLAD, Dear ImGui).
+#
+#   vcpkg install glfw3 "glad[gl-api-33,loader]" "imgui[glfw-binding,opengl3-binding,docking-experimental]"
+# ---------------------------------------------------------------------------
+option(OPTINSPECT_BUILD_GUI "Build the OpenGL desktop GUI (optinspect_gui)" ON)
+
+if(OPTINSPECT_BUILD_GUI)
+    find_package(glfw3 CONFIG REQUIRED)
+    find_package(glad CONFIG REQUIRED)
+    find_package(imgui CONFIG REQUIRED)
+
+    # Reusable OpenGL rendering components. Depends on OpenCV (image data), GLFW
+    # and GLAD only - not on the inspection pipeline and not on the database.
+    add_library(optinspect_visualization STATIC
+        src/visualization/GLContext.cpp
+        src/visualization/Shader.cpp
+        src/visualization/Texture2D.cpp
+        src/visualization/ImageFormat.cpp
+        src/visualization/ImageRenderer.cpp
+        src/visualization/ImageViewport.cpp
+        src/visualization/ViewportTransform.cpp
+        src/visualization/DefectOverlayRenderer.cpp
+        src/visualization/GpuTimer.cpp
+    )
+    target_include_directories(optinspect_visualization PUBLIC ${CMAKE_SOURCE_DIR}/include)
+    target_link_libraries(optinspect_visualization PUBLIC opencv_core glad::glad glfw)
+
+    # GUI logic without any window/OpenGL/ImGui code: controller, inspection
+    # worker, history/analytics access, image loading, command line. Testable headless.
+    add_library(optinspect_gui_core STATIC
+        src/application/gui/ImageLoader.cpp
+        src/application/gui/HistoryService.cpp
+        src/application/gui/InspectionWorker.cpp
+        src/application/gui/GuiInspectionController.cpp
+        src/application/gui/GuiOptions.cpp
+    )
+    target_include_directories(optinspect_gui_core PUBLIC ${CMAKE_SOURCE_DIR}/src/application/gui)
+    target_link_libraries(optinspect_gui_core PUBLIC optinspect_application)
+    find_package(Threads REQUIRED)
+    target_link_libraries(optinspect_gui_core PUBLIC Threads::Threads)
+
+    add_executable(optinspect_gui
+        src/application/gui/main_gui.cpp
+        src/application/gui/GuiApplication.cpp
+        src/application/gui/MainWindow.cpp
+        src/application/gui/InspectionPanel.cpp
+        src/application/gui/ImageComparisonPanel.cpp
+        src/application/gui/ResultsPanel.cpp
+        src/application/gui/DefectPanel.cpp
+        src/application/gui/HistoryPanel.cpp
+        src/application/gui/AnalyticsPanel.cpp
+        src/application/gui/PerformancePanel.cpp
+        src/application/gui/NativeFileDialog.cpp
+    )
+    target_link_libraries(optinspect_gui PRIVATE optinspect_gui_core optinspect_visualization imgui::imgui)
+    if(WIN32)
+        target_link_libraries(optinspect_gui PRIVATE ole32 shell32 uuid)
+    endif()
+    target_compile_definitions(optinspect_gui PRIVATE
+        OPTINSPECT_SHADER_SOURCE_DIR="${CMAKE_SOURCE_DIR}/resources/shaders")
+    # Make the GLSL files available next to the executable.
+    add_custom_command(TARGET optinspect_gui POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_SOURCE_DIR}/resources/shaders
+                $<TARGET_FILE_DIR:optinspect_gui>/resources/shaders
+        COMMENT "Copying shaders next to optinspect_gui")
+endif()
 
 # ---------------------------------------------------------------------------
 # Tests (GoogleTest, fetched via CMake's FetchContent if not already

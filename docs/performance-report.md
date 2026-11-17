@@ -4,6 +4,10 @@
 > development. Every CLI run now generates a report of the same kind
 > automatically: `<timestamp>_performance_report.md` in the `--output` folder.
 
+> **Phase 3 (GUI / visualization):** the measurements of the desktop application (startup, texture upload,
+> frame times, UI responsiveness, history queries) are in the separate report
+> [visualization-performance.md](visualization-performance.md). The Phase 1 and Phase 2 results below are unchanged.
+
 All figures in this document are **real measurements** taken on the
 development machine during this session — nothing here is estimated or
 fabricated. They characterize the current Phase 1 implementation and

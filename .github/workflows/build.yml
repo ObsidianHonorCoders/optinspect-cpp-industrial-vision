@@ -1,9 +1,16 @@
 name: Build and Test
 
-# Builds OptiInspect on a Windows runner using vcpkg to obtain OpenCV,
-# GoogleTest and SQLite, then runs the full CTest suite (Phase 1 unit and
-# integration tests plus the Phase 2 database tests, which use temporary
-# databases only) and a short database CLI smoke test.
+# Job build-and-test: builds the CLI (Phases 1 and 2) WITHOUT the GUI on a Windows runner
+# using vcpkg to obtain OpenCV, GoogleTest and SQLite, then runs the Phase 1 unit and
+# integration tests plus the Phase 2 database tests (temporary databases only) and a
+# short database CLI smoke test. This job needs none of the GUI dependencies.
+#
+# Job build-gui (Phase 3): additionally installs GLFW, GLAD and Dear ImGui, builds
+# optinspect_gui.exe and the visualization libraries and runs the whole CTest suite,
+# including the visualization unit tests and the GUI workflow tests. The OpenGL smoke
+# tests need a real OpenGL 3.3 context; GitHub-hosted runners have no GPU, so they are
+# expected to be reported as SKIPPED (never as passed) unless the runner happens to
+# provide a context.
 #
 # Note on build time: installing OpenCV from source via vcpkg with the
 # feature set used here (core,highgui,calib3d,png,jpeg) takes roughly
@@ -70,6 +77,7 @@ jobs:
           -G "Visual Studio 17 2022" -A x64
           -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake
           -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DOPTINSPECT_BUILD_GUI=OFF
 
       - name: Build (Release)
         run: cmake --build build --config Release -- /m
@@ -100,4 +108,76 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ctest-logs
+          path: build/Testing/Temporary/
+
+  build-gui:
+    # Phase 3: GUI, visualization library, visualization tests, GUI workflow tests.
+    # Separate job so the CLI job above keeps its small dependency set.
+    runs-on: windows-2022
+
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Export GitHub Actions cache variables for vcpkg
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Clone vcpkg
+        run: git clone https://github.com/microsoft/vcpkg ${{ env.VCPKG_ROOT }}
+
+      - name: Bootstrap vcpkg
+        run: ${{ env.VCPKG_ROOT }}\bootstrap-vcpkg.bat
+
+      - name: Install dependencies via vcpkg
+        # Same reduced OpenCV feature set as the CLI job, plus the GUI stack:
+        # GLFW (window/context/input), GLAD (OpenGL 3.3 loader) and Dear ImGui with its
+        # GLFW + OpenGL3 backends and docking support.
+        run: |
+          ${{ env.VCPKG_ROOT }}\vcpkg.exe install "opencv4[core,highgui,calib3d,png,jpeg]:x64-windows"
+          ${{ env.VCPKG_ROOT }}\vcpkg.exe install "gtest:x64-windows"
+          ${{ env.VCPKG_ROOT }}\vcpkg.exe install "sqlite3:x64-windows"
+          ${{ env.VCPKG_ROOT }}\vcpkg.exe install "glfw3:x64-windows"
+          ${{ env.VCPKG_ROOT }}\vcpkg.exe install "glad[gl-api-33,loader]:x64-windows"
+          ${{ env.VCPKG_ROOT }}\vcpkg.exe install "imgui[glfw-binding,opengl3-binding,docking-experimental]:x64-windows"
+
+      - name: Configure (CMake, GUI enabled)
+        run: >
+          cmake -S . -B build
+          -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DOPTINSPECT_BUILD_GUI=ON
+
+      - name: Build (Release) - optinspect.exe and optinspect_gui.exe
+        run: cmake --build build --config Release -- /m
+
+      - name: Run all tests
+        # Includes the visualization unit tests and the GUI workflow tests. The OpenGL smoke
+        # tests are SKIPPED when the runner cannot create an OpenGL 3.3 core context.
+        working-directory: build
+        run: ctest -C Release --output-on-failure
+
+      - name: Check that both executables were built
+        shell: pwsh
+        run: |
+          foreach ($exe in "optinspect.exe", "optinspect_gui.exe") {
+            if (-not (Test-Path "build\bin\Release\$exe")) { Write-Error "$exe missing"; exit 1 }
+          }
+          if (-not (Test-Path "build\bin\Release\resources\shaders\image.vert")) { Write-Error "shaders missing"; exit 1 }
+          & build\bin\Release\optinspect_gui.exe --help
+          exit $LASTEXITCODE
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-logs-gui
           path: build/Testing/Temporary/

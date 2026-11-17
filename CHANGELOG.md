@@ -2,6 +2,50 @@
 
 All notable changes to OptiInspect are documented in this file.
 
+## [0.3.0] — Phase 3: Visualization & Optimization
+
+Adds an interactive OpenGL desktop application on top of the unchanged Phase 1 engine and Phase 2
+database. No detection algorithm, threshold or PASS/FAIL/REVIEW rule was modified, no database
+schema change was made, and nothing of Phase 4 was implemented.
+
+### Added
+
+- `optinspect_gui.exe` (CMake option `OPTINSPECT_BUILD_GUI`, default ON; the CLI and all earlier
+  tests build with `-DOPTINSPECT_BUILD_GUI=OFF`):
+  - Dear ImGui docking workstation: toolbar, inspection inputs (native Windows `IFileDialog` dialogs),
+    results panel, region table, event log, History, Analytics and Performance pages.
+  - Inspection from the GUI through the existing `InspectionPipeline` on an owned worker thread with
+    real stage progress, optional persistence through the existing `InspectionRecorder`.
+  - History page over the existing repositories (status/product/serial/date/id filters), loading of stored
+    images and measurements, clear reporting of missing files; Analytics page over
+    `QualityAnalyticsService` with ImDrawList charts.
+  - Image modes Reference / Inspected / Annotated / Difference / Side-by-side (synchronized) / Blend,
+    zoom, pan, fit, 1:1, cursor image coordinates, defect overlays with labels, selection and
+    centering, ROI selection with export to `<id>_roi.json`.
+  - Scripted options for reproducible screenshots and measurements (`--run`, `--view`, `--page`, `--roi`,
+    `--simulate-input`, `--screenshot`, `--benchmark`).
+- `optinspect_visualization` library (`include/visualization/`, `src/visualization/`,
+  `resources/shaders/`): `GLContext`, `Shader`, `Texture2D`, `ImageRenderer`, `DefectOverlayRenderer`,
+  `GpuTimer` and the pure-logic `ViewportTransform`, `ImageViewport`, `ImageFormat`, `TextureCache`.
+- `optinspect_gui_core` library: `GuiInspectionController`, `InspectionWorker`, `AsyncTask`,
+  `HistoryService`, `ImageLoader`, `GuiOptions` (no OpenGL/ImGui).
+- Application layer: `InspectionService` (`runInspection`, `generateInspectionId`, `makeArtifacts`) moved
+  out of `main.cpp` unchanged so the CLI and the GUI share it; `InspectionPipeline::run` takes an optional
+  `StageObserver` (empty by default).
+- Tests (272 in total with the GUI enabled): 74 visualization unit tests, 30 headless GUI workflow tests
+  (submission, worker delivery, error propagation, persistence, history, historical images, analytics,
+  shutdown), 10 OpenGL smoke tests that are skipped when no OpenGL 3.3 core context is available, plus the
+  158 earlier tests, all passing.
+- `optinspect_visualization_benchmark` (manual) and `docs/visualization-performance.md`.
+- Documentation: `docs/visualization-design.md`, Phase 3 section in the README, architecture update.
+- CI: the existing job now builds with `-DOPTINSPECT_BUILD_GUI=OFF`; a new `build-gui` job installs
+  GLFW/GLAD/ImGui, builds `optinspect_gui.exe` and runs all tests. The workflow has not been executed yet.
+
+### Changed
+
+- `src/application/main.cpp` delegates to `InspectionService` (behaviour and output unchanged; the CLI
+  regression tests pass).
+- `src/visualization/README.md` describes the implemented module.
 ## [0.2.0] — Phase 2: Database & Quality Analytics
 
 Adds optional SQLite persistence and SQL analytics on top of the unchanged

@@ -6,6 +6,7 @@
 #include "PerformanceReport.hpp"
 #include "ReportWriter.hpp"
 #include "ResultAnnotator.hpp"
+#include "InspectionService.hpp"
 
 #include "acquisition/FileImageSource.hpp"
 #include "common/Errors.hpp"
@@ -26,22 +27,6 @@ namespace {
 namespace fs = std::filesystem;
 using namespace optinspect;
 
-/// Generates a reasonably unique inspection identifier from the current
-/// wall-clock time, in the form YYYYMMDD-HHMMSS.
-std::string generateInspectionId() {
-    const auto now = std::chrono::system_clock::now();
-    const std::time_t now_c = std::chrono::system_clock::to_time_t(now);
-    std::tm local_tm{};
-#if defined(_WIN32)
-    localtime_s(&local_tm, &now_c);
-#else
-    localtime_r(&now_c, &local_tm);
-#endif
-    std::ostringstream oss;
-    oss << std::put_time(&local_tm, "%Y%m%d-%H%M%S");
-    return oss.str();
-}
-
 int exitCodeForDecision(InspectionDecision decision) {
     switch (decision) {
         case InspectionDecision::PASS: return 0;
@@ -49,70 +34,6 @@ int exitCodeForDecision(InspectionDecision decision) {
         case InspectionDecision::REVIEW: return 2;
     }
     return 3;
-}
-
-struct InspectionOutcome {
-    InspectionResult result;
-    std::string annotated_path;
-    std::string diff_path;
-    std::string report_path;
-    std::vector<StageTiming> stages;
-    double total_ms = 0.0;
-    cv::Size reference_size;
-    cv::Size inspected_size;
-    cv::Size annotated_size;
-    cv::Size diff_size;
-};
-
-/// Runs one reference/inspected inspection and writes its annotated image,
-/// difference image and JSON report into `output_dir`, all named after
-/// `inspection_id`.
-InspectionOutcome runInspection(const InspectionConfig& config,
-                                const std::string& reference_path,
-                                const std::string& inspected_path,
-                                const std::string& output_dir,
-                                const std::string& inspection_id) {
-    Stopwatch total_timer;
-
-    const cv::Mat reference = FileImageSource(reference_path).load();
-    const cv::Mat inspected = FileImageSource(inspected_path).load();
-
-    const InspectionPipeline pipeline(config);
-    const PipelineOutput output = pipeline.run(reference, inspected);
-
-    fs::create_directories(output_dir);
-
-    InspectionOutcome outcome;
-    outcome.result = output.result;
-    outcome.stages = output.timer.timings();
-    outcome.reference_size = reference.size();
-    outcome.inspected_size = inspected.size();
-
-    const cv::Mat& annotation_source =
-        output.aligned_inspected.empty() ? inspected : output.aligned_inspected;
-    const cv::Mat annotated = ResultAnnotator::annotate(annotation_source, output.result);
-    outcome.annotated_path = (fs::path(output_dir) / (inspection_id + "_annotated.png")).string();
-    cv::imwrite(outcome.annotated_path, annotated);
-    outcome.annotated_size = annotated.size();
-
-    if (!output.difference_image.empty()) {
-        outcome.diff_path = (fs::path(output_dir) / (inspection_id + "_difference.png")).string();
-        cv::imwrite(outcome.diff_path, output.difference_image);
-        outcome.diff_size = output.difference_image.size();
-    }
-
-    InspectionMetadata metadata;
-    metadata.inspection_id = inspection_id;
-    metadata.reference_path = reference_path;
-    metadata.inspected_path = inspected_path;
-    metadata.reference_size = reference.size();
-    metadata.inspected_size = inspected.size();
-
-    outcome.report_path = (fs::path(output_dir) / (inspection_id + "_report.json")).string();
-    ReportWriter::writeJson(outcome.report_path, metadata, output.result, output.timer, config);
-
-    outcome.total_ms = total_timer.elapsedMilliseconds();
-    return outcome;
 }
 
 PerformanceRecord toRecord(const std::string& id, const InspectionOutcome& o,
@@ -147,12 +68,6 @@ void printSingleSummary(const std::string& inspection_id, const std::string& ref
     }
     std::cout << "Report        : " << o.report_path << "\n";
     std::cout << "Total time    : " << o.total_ms << " ms\n";
-}
-
-/// Absolute, normalized form of a path so stored references remain valid
-/// regardless of the working directory the tool is later started from.
-std::string absolutePath(const std::string& path) {
-    return fs::absolute(fs::path(path)).lexically_normal().string();
 }
 
 /// How (and whether) this run stores its results in the database. Persistence
@@ -210,19 +125,7 @@ std::optional<std::int64_t> persistOutcome(PersistenceSession& session, const In
     try {
         if (!session.recorder) throw OptInspectError(session.open_error);
 
-        InspectionArtifacts artifacts;
-        artifacts.external_id = inspection_id;
-        artifacts.reference_path = absolutePath(reference_path);
-        artifacts.inspected_path = absolutePath(inspected_path);
-        artifacts.annotated_path = absolutePath(outcome.annotated_path);
-        if (!outcome.diff_path.empty()) artifacts.difference_path = absolutePath(outcome.diff_path);
-        artifacts.report_path = absolutePath(outcome.report_path);
-        artifacts.reference_size = outcome.reference_size;
-        artifacts.inspected_size = outcome.inspected_size;
-        artifacts.annotated_size = outcome.annotated_size;
-        artifacts.difference_size = outcome.diff_size;
-        artifacts.processing_time_ms = outcome.total_ms;
-
+        const InspectionArtifacts artifacts = makeArtifacts(inspection_id, reference_path, inspected_path, outcome);
         return session.recorder->record(buildPersistenceRequest(
             outcome.result, config, artifacts, session.options, database::nowUtcTimestamp()));
     } catch (const std::exception& e) {
